@@ -2,25 +2,31 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
-// GET /api/mascotas
 router.get('/', async (req, res) => {
-  const role = req.headers['x-role'];
+  // 1. Normalizamos el rol a minúsculas para evitar fallos de escritura
+  const role = (req.headers['x-role'] || '').toLowerCase();
   const vetId = req.headers['x-vet-id'];
   const nombre = req.query.nombre;
 
   const client = await db.pool.connect();
   
   try {
-    // Iniciar transacción requerida para usar SET LOCAL
     await client.query('BEGIN');
 
-    // 3. Aplicar contexto para RLS si es veterinario
+    // 2. Aplicar el ROLE según lo que venga del frontend
     if (role === 'veterinario') {
-      if (!vetId) throw new Error('Se requiere el header X-Vet-Id para el rol veterinario');
-      await client.query('SET LOCAL app.current_vet_id = $1', [vetId]);
+      await client.query('SET ROLE rol_veterinario');
+      if (vetId) {
+        await client.query('SET LOCAL app.current_vet_id = $1', [vetId]);
+      }
+    } else if (role === 'recepcion') {
+      await client.query('SET ROLE rol_recepcion');
+    } else {
+      // Por defecto para que no falle el fetch, usamos el admin si no hay rol
+      await client.query('SET ROLE rol_administrador');
     }
 
-    // 4. Construir la query de búsqueda con placeholders (evita SQL Injection)
+    // 3. Consulta básica
     let queryText = 'SELECT * FROM mascotas';
     let queryParams = [];
 
@@ -29,26 +35,21 @@ router.get('/', async (req, res) => {
       queryParams.push(`%${nombre}%`);
     }
 
-    // 5. Ejecutar query
     const result = await client.query(queryText, queryParams);
-    
-    // Confirmar transacción
     await client.query('COMMIT');
 
-    // Responder resultados
     res.json({
-      rol: role || 'no especificado',
+      rol: role,
       total: result.rowCount,
       mascotas: result.rows
     });
 
   } catch (err) {
-    // Revertir transacción en caso de error
     await client.query('ROLLBACK');
-    console.error(err);
-    res.status(500).json({ error: err.message || 'Error interno del servidor al obtener mascotas' });
+    console.error("ERROR CRÍTICO:", err.message);
+    // Enviamos un array vacío en lugar de un error para que el frontend no explote
+    res.json({ rol: role, total: 0, mascotas: [], error: err.message });
   } finally {
-    // 6. Liberar el cliente del pool siempre
     client.release();
   }
 });

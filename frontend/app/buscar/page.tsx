@@ -5,15 +5,38 @@ import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
+type Mascota = {
+  id: number;
+  nombre: string;
+  especie: string;
+  raza?: string;
+  fecha_nacimiento?: string;
+  dueno_id?: number;
+};
+
+const especieEmoji: Record<string, string> = {
+  perro: '🐶',
+  gato: '🐱',
+  ave: '🐦',
+  conejo: '🐰',
+  reptil: '🦎',
+};
+
+function getEspecieEmoji(especie: string) {
+  return especieEmoji[(especie || '').toLowerCase()] || '🐾';
+}
+
 export default function BuscarMascotasPage() {
   const { rol, vetId } = useAuth();
   const router = useRouter();
-  
+
   const [searchTerm, setSearchTerm] = useState('');
-  const [mascotas, setMascotas] = useState<any[]>([]);
+  const [mascotas, setMascotas] = useState<Mascota[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
+  const [apiError, setApiError] = useState('');
 
   // Proteger ruta
   useEffect(() => {
@@ -24,89 +47,256 @@ export default function BuscarMascotasPage() {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setApiError('');
+    setSearched(true);
 
     try {
-      const res = await fetch(`http://localhost:3001/api/mascotas?nombre=${encodeURIComponent(searchTerm)}`, {
-        headers: {
-          'X-Role': rol,
-          'X-Vet-Id': vetId
+      const res = await fetch(
+        `http://localhost:3001/api/mascotas?nombre=${encodeURIComponent(searchTerm)}`,
+        {
+          headers: {
+            'X-Role': rol,
+            'X-Vet-Id': vetId,
+          },
         }
-      });
-
-      if (!res.ok) throw new Error('Error al buscar mascotas');
+      );
 
       const data = await res.json();
+
+      if (data.error) setApiError(data.error);
+
       setMascotas(data.mascotas || []);
       setTotal(data.total || 0);
     } catch (err: any) {
-      setError(err.message);
+      setError('No se pudo conectar con la API. Verifica que el backend esté corriendo.');
     } finally {
       setLoading(false);
     }
   };
 
+  const roleChipClass: Record<string, string> = {
+    veterinario: 'role-chip-vet',
+    recepcion: 'role-chip-recepcion',
+    administrador: 'role-chip-administrador',
+  };
+
   if (!rol) return null;
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
-      <header className="flex justify-between items-center mb-8 bg-white p-4 rounded-lg shadow border border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-700">
-          Sesión: <span className="capitalize text-blue-600">{rol}</span> {rol === 'veterinario' && `(ID: ${vetId})`}
-        </h2>
-        <nav className="space-x-4">
-          <Link href="/vacunacion" className="text-blue-600 hover:underline font-medium">Ver Vacunación Pendiente</Link>
-          <button onClick={() => router.push('/')} className="text-gray-500 hover:text-gray-800 text-sm">Salir</button>
+    <div className="page-wrapper">
+      {/* Header */}
+      <header className="site-header">
+        <div className="site-header-brand">
+          <span style={{ fontSize: '22px' }}>🐾</span>
+          <div>
+            <h2>Clínica Veterinaria</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+              <span className={`role-chip ${roleChipClass[rol] || ''}`} style={{ fontSize: '11px', padding: '2px 8px' }}>
+                {rol}{rol === 'veterinario' && vetId ? ` · ID ${vetId}` : ''}
+              </span>
+            </div>
+          </div>
+        </div>
+        <nav className="site-header-nav">
+          <Link href="/vacunacion" className="btn btn-ghost" style={{ fontSize: '13px' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18" />
+            </svg>
+            Vacunación Pendiente
+          </Link>
+          <button
+            id="btn-salir"
+            onClick={() => {
+              localStorage.clear();
+              router.push('/');
+            }}
+            className="btn btn-ghost"
+            style={{ fontSize: '13px' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            Salir
+          </button>
         </nav>
       </header>
 
-      <main className="bg-white p-6 rounded-lg shadow border border-gray-200">
-        <h1 className="text-2xl font-bold mb-4">Búsqueda de Mascotas</h1>
-        
-        <form onSubmit={handleSearch} className="flex gap-2 mb-6">
+      {/* Main content */}
+      <main className="card animate-fadein">
+        {/* Page title */}
+        <div style={{ marginBottom: '24px' }}>
+          <h1 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--color-text)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            Búsqueda de Mascotas
+          </h1>
+          <p style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
+            Busca pacientes por nombre. Los resultados se filtran según tu rol de acceso.
+          </p>
+        </div>
+
+        {/* Search form */}
+        <form onSubmit={handleSearch} style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
           <input
+            id="input-buscar"
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar mascota por nombre..."
-            className="flex-1 border border-gray-300 rounded-md p-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            placeholder="Buscar mascota por nombre... (vacío = todas)"
+            className="input"
+            style={{ flex: 1 }}
           />
-          <button 
-            type="submit" 
+          <button
+            id="btn-buscar"
+            type="submit"
             disabled={loading}
-            className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 transition"
+            className="btn btn-primary"
+            style={{ flexShrink: 0 }}
           >
-            {loading ? 'Buscando...' : 'Buscar'}
+            {loading ? (
+              <>
+                <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                </svg>
+                Buscando...
+              </>
+            ) : (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                Buscar
+              </>
+            )}
           </button>
         </form>
 
-        {error && <p className="text-red-500 mb-4">{error}</p>}
+        {/* Connection error */}
+        {error && (
+          <div className="alert alert-danger">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            {error}
+          </div>
+        )}
 
-        <div className="mb-2 text-sm text-gray-600 font-medium">
-          Mostrando {total} mascotas
-        </div>
+        {/* DB / RLS error (non-fatal) */}
+        {apiError && (
+          <div className="alert alert-danger">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+              <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
+            </svg>
+            <span><strong>Error de BD:</strong> {apiError}</span>
+          </div>
+        )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+        {/* Stats bar */}
+        {searched && !loading && (
+          <div
+            className="animate-fadein"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              marginBottom: '16px',
+              padding: '10px 14px',
+              background: 'var(--color-surface-2)',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
+              <strong style={{ color: 'var(--color-text)' }}>{total}</strong> mascota{total !== 1 ? 's' : ''} encontrada{total !== 1 ? 's' : ''}
+              {searchTerm && <> para &ldquo;<em style={{ color: 'var(--color-text)' }}>{searchTerm}</em>&rdquo;</>}
+            </span>
+          </div>
+        )}
+
+        {/* Table */}
+        <div className="table-wrapper">
+          <table>
             <thead>
-              <tr className="bg-gray-100 border-y border-gray-300 text-gray-700">
-                <th className="p-3 font-semibold">ID</th>
-                <th className="p-3 font-semibold">Nombre</th>
-                <th className="p-3 font-semibold">Especie</th>
-                <th className="p-3 font-semibold">Fecha de Nacimiento</th>
+              <tr>
+                <th>ID</th>
+                <th>Mascota</th>
+                <th>Especie</th>
+                <th>Raza</th>
+                <th>Fecha de Nacimiento</th>
               </tr>
             </thead>
             <tbody>
-              {mascotas.length === 0 && !loading && (
+              {loading && (
                 <tr>
-                  <td colSpan={4} className="p-4 text-center text-gray-500">No se encontraron mascotas</td>
+                  <td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                      <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                      </svg>
+                      Consultando base de datos...
+                    </div>
+                  </td>
                 </tr>
               )}
-              {mascotas.map((mascota, index) => (
-                <tr key={mascota.id} className={`border-b border-gray-200 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                  <td className="p-3">{mascota.id}</td>
-                  <td className="p-3 font-medium">{mascota.nombre}</td>
-                  <td className="p-3">{mascota.especie}</td>
-                  <td className="p-3">{new Date(mascota.fecha_nacimiento).toLocaleDateString()}</td>
+              {!loading && searched && mascotas.length === 0 && (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="empty-state">
+                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                      </svg>
+                      <p>No se encontraron mascotas{searchTerm ? ` con el nombre "${searchTerm}"` : ''}</p>
+                      {rol === 'veterinario' && (
+                        <p style={{ fontSize: '12px', marginTop: '2px' }}>
+                          Solo puedes ver mascotas que tienes asignadas (RLS activo)
+                        </p>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {!loading && !searched && (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="empty-state">
+                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                      </svg>
+                      <p>Realiza una búsqueda para ver los resultados</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {!loading && mascotas.map((mascota, index) => (
+                <tr key={mascota.id} className="animate-fadein" style={{ animationDelay: `${index * 30}ms` }}>
+                  <td>
+                    <span style={{ fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text-muted)', background: 'var(--color-surface-2)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
+                      #{mascota.id}
+                    </span>
+                  </td>
+                  <td style={{ fontWeight: '600' }}>
+                    <span style={{ marginRight: '6px' }}>{getEspecieEmoji(mascota.especie)}</span>
+                    {mascota.nombre}
+                  </td>
+                  <td>
+                    <span className="badge badge-info" style={{ textTransform: 'capitalize', fontSize: '11px' }}>
+                      {mascota.especie}
+                    </span>
+                  </td>
+                  <td style={{ color: 'var(--color-text-muted)' }}>
+                    {mascota.raza || '—'}
+                  </td>
+                  <td style={{ color: 'var(--color-text-muted)' }}>
+                    {mascota.fecha_nacimiento
+                      ? new Date(mascota.fecha_nacimiento).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' })
+                      : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>
